@@ -2,15 +2,17 @@ using System.Globalization;
 using AuctionService.Data;
 using AuctionService.DTOs;
 using AuctionService.Entities;
+using Contracts;
 using Mapster;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Wolverine.EntityFrameworkCore;
 
 namespace AuctionService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")] // http://localhost:7001/api/auctions GET, POST, PUT
-public class AuctionsController(AuctionDbContext context) : ControllerBase
+public class AuctionsController(AuctionDbContext context, IDbContextOutbox<AuctionDbContext> outbox) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<AuctionDto>>> GetAuctions(string? date)
@@ -25,10 +27,10 @@ public class AuctionsController(AuctionDbContext context) : ControllerBase
             {
                 return BadRequest("Invalid date");
             }
-            
+
             query = query.Where(x => x.UpdatedAt > parsedDate);
         }
-        
+
         var auctions = await query
             .OrderBy(x => x.Item.Make)
             .ThenBy(x => x.Item.Model)
@@ -44,12 +46,12 @@ public class AuctionsController(AuctionDbContext context) : ControllerBase
         var auction = await context.Auctions
             .ProjectToType<AuctionDto>()
             .FirstOrDefaultAsync(x => x.Id == id);
-        
+
         if (auction == null)
         {
             return NotFound();
         }
-        
+
         return auction;
     }
 
@@ -57,16 +59,17 @@ public class AuctionsController(AuctionDbContext context) : ControllerBase
     public async Task<ActionResult<AuctionDto>> CreateAuction(CreateAuctionDto createAuctionDto)
     {
         var auction = createAuctionDto.Adapt<Auction>();
-        
+
         // TODO: add current user as seller
         auction.Seller = "TODO: seller";
-        
+
         context.Auctions.Add(auction);
 
-        await context.SaveChangesAsync();
-        
-        return CreatedAtAction(nameof(GetAuction), new { id = auction.Id }, 
-            auction.Adapt<AuctionDto>());
+        var newAuction = auction.Adapt<AuctionDto>();
+        await outbox.PublishAsync(newAuction.Adapt<AuctionCreated>());
+        await outbox.SaveChangesAndFlushMessagesAsync();
+
+        return CreatedAtAction(nameof(GetAuction), new { id = auction.Id }, newAuction);
     }
 
     [HttpPut("{id}")]
@@ -75,7 +78,7 @@ public class AuctionsController(AuctionDbContext context) : ControllerBase
         var auction = await context.Auctions
             .Include(x => x.Item)
             .FirstOrDefaultAsync(x => x.Id == id);
-        
+
         if (updateAuctionDto.Make == "foo") throw new Exception("bar");
 
         if (auction == null)
@@ -87,14 +90,15 @@ public class AuctionsController(AuctionDbContext context) : ControllerBase
         {
             return BadRequest("Cannot update an auction that has bids");
         }
-        
+
         // TODO: Check seller is the same as the current user
         auction.UpdatedAt = DateTime.UtcNow;
-        
-        updateAuctionDto.Adapt(auction.Item);
 
-        await context.SaveChangesAsync();
-        
+        var updatedAuction = updateAuctionDto.Adapt(auction.Item);
+
+        await outbox.PublishAsync(updatedAuction.Adapt<AuctionUpdated>());
+        await outbox.SaveChangesAndFlushMessagesAsync();
+
         return NoContent();
     }
 
@@ -112,13 +116,14 @@ public class AuctionsController(AuctionDbContext context) : ControllerBase
         {
             return BadRequest("Cannot delete auction that has bids");
         }
-        
+
         // TODO: check seller is the same as current user
-        
+
         context.Auctions.Remove(auction);
-        
-        await context.SaveChangesAsync();
-        
+
+        await outbox.PublishAsync(auction.Adapt<AuctionDeleted>());
+        await outbox.SaveChangesAndFlushMessagesAsync();
+
         return NoContent();
     }
 }
