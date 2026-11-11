@@ -2,6 +2,7 @@ using AuctionService.Data;
 using AuctionService.Errors;
 using Contracts;
 using Mapster;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Wolverine.EntityFrameworkCore;
@@ -24,12 +25,22 @@ builder.Services.AddDbContextWithWolverineIntegration<AuctionDbContext>(options 
 });
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = builder.Configuration["IdentityServiceUrl"];
+        options.RequireHttpsMetadata = false;
+        options.TokenValidationParameters.ValidateAudience = false;
+        options.TokenValidationParameters.NameClaimType = "username";
+    });
+
 builder.Host.UseWolverine(opts =>
 {
     opts.PersistMessagesWithPostgresql(connString, "auctions_rmq");
     opts.UseEntityFrameworkCoreTransactions();
     opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
-    
+
     opts.UseRabbitMq(rabbit =>
         {
             rabbit.HostName = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
@@ -40,11 +51,11 @@ builder.Host.UseWolverine(opts =>
         .DeclareExchange("auction-updated", ex => ex.ExchangeType = ExchangeType.Fanout)
         .DeclareExchange("auction-deleted", ex => ex.ExchangeType = ExchangeType.Fanout)
         .AutoProvision();
-    
+
     opts.PublishMessage<AuctionCreated>().ToRabbitExchange("auction-created");
     opts.PublishMessage<AuctionUpdated>().ToRabbitExchange("auction-updated");
     opts.PublishMessage<AuctionDeleted>().ToRabbitExchange("auction-deleted");
-    
+
     opts.ListenToRabbitQueue("wolverine-dead-letter-queue");
 });
 
