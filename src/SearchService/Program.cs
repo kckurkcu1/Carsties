@@ -35,38 +35,37 @@ builder.Services.AddHttpClient<AuctionSvcHttpClient>()
             return default;
         };
     });
-
 builder.Host.UseWolverine(opts =>
 {
-opts.UseRabbitMq(rabbit =>
-    {
-        rabbit.HostName = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
-        rabbit.UserName = builder.Configuration["RabbitMQ:Usernam"] ?? "guest";
-        rabbit.Password = builder.Configuration["RabbitMQ:Password"] ?? "guest";
-    })
-    .DeclareExchange("auction-created", ex => ex.ExchangeType = ExchangeType.Fanout)
-    .DeclareExchange("auction-updated", ex => ex.ExchangeType = ExchangeType.Fanout)
-    .DeclareExchange("auction-deleted", ex => ex.ExchangeType = ExchangeType.Fanout)
-    .DeclareExchange("auction-finished", ex => ex.ExchangeType = ExchangeType.Fanout)
-    .DeclareExchange("bid-placed", ex => ex.ExchangeType = ExchangeType.Fanout)
-    .BindExchange("auction-created").ToQueue("search-auction-created")
-    .BindExchange("auction-updated").ToQueue("search-auction-updated")
-    .BindExchange("auction-deleted").ToQueue("search-auction-deleted")
-    .BindExchange("auction-finished").ToQueue("search-auction-finished")
-    .BindExchange("bid-placed").ToQueue("search-bid-placed")
-    .AutoProvision();
+    opts.UseRabbitMq(rabbit =>
+        {
+            rabbit.HostName = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
+            rabbit.UserName = builder.Configuration["RabbitMQ:Usernam"] ?? "guest";
+            rabbit.Password = builder.Configuration["RabbitMQ:Password"] ?? "guest";
+        })
+        .DeclareExchange("auction-created", ex => ex.ExchangeType = ExchangeType.Fanout)
+        .DeclareExchange("auction-updated", ex => ex.ExchangeType = ExchangeType.Fanout)
+        .DeclareExchange("auction-deleted", ex => ex.ExchangeType = ExchangeType.Fanout)
+        .DeclareExchange("auction-finished", ex => ex.ExchangeType = ExchangeType.Fanout)
+        .DeclareExchange("bid-placed", ex => ex.ExchangeType = ExchangeType.Fanout)
+        .BindExchange("auction-created").ToQueue("search-auction-created")
+        .BindExchange("auction-updated").ToQueue("search-auction-updated")
+        .BindExchange("auction-deleted").ToQueue("search-auction-deleted")
+        .BindExchange("auction-finished").ToQueue("search-auction-finished")
+        .BindExchange("bid-placed").ToQueue("search-bid-placed")
+        .AutoProvision();
+    
+    opts.ListenToRabbitQueue("search-auction-created");
+    opts.ListenToRabbitQueue("search-auction-updated");
+    opts.ListenToRabbitQueue("search-auction-deleted");
+    opts.ListenToRabbitQueue("search-auction-finished");
+    opts.ListenToRabbitQueue("search-bid-placed");
 
-opts.ListenToRabbitQueue("search-auction-created");
-opts.ListenToRabbitQueue("search-auction-updated");
-opts.ListenToRabbitQueue("search-auction-deleted");
-opts.ListenToRabbitQueue("search-auction-finished");
-opts.ListenToRabbitQueue("search-bid-placed");
-
-opts.OnException<TransientSearchException>()
-    .RetryWithCooldown(
-        TimeSpan.FromMilliseconds(500),
-        TimeSpan.FromMilliseconds(500),
-        TimeSpan.FromSeconds(1)).Then.MoveToErrorQueue();
+    opts.OnException<TransientSearchException>()
+        .RetryWithCooldown(
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromSeconds(1)).Then.MoveToErrorQueue();
 });
 
 var app = builder.Build();

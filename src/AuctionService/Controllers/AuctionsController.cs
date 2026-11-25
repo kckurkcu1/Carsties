@@ -28,10 +28,10 @@ public class AuctionsController(AuctionDbContext context, IDbContextOutbox<Aucti
             {
                 return BadRequest("Invalid date");
             }
-
+            
             query = query.Where(x => x.UpdatedAt > parsedDate);
         }
-
+        
         var auctions = await query
             .OrderBy(x => x.Item.Make)
             .ThenBy(x => x.Item.Model)
@@ -47,29 +47,29 @@ public class AuctionsController(AuctionDbContext context, IDbContextOutbox<Aucti
         var auction = await context.Auctions
             .ProjectToType<AuctionDto>()
             .FirstOrDefaultAsync(x => x.Id == id);
-
+        
         if (auction == null)
         {
             return NotFound();
         }
-
+        
         return auction;
     }
-    
+
     [Authorize]
     [HttpPost]
     public async Task<ActionResult<AuctionDto>> CreateAuction(CreateAuctionDto createAuctionDto)
     {
         var auction = createAuctionDto.Adapt<Auction>();
-
+        
         auction.Seller = User.Identity?.Name ?? throw new Exception("User has not been authenticated");
-
+        
         context.Auctions.Add(auction);
 
         var newAuction = auction.Adapt<AuctionDto>();
         await outbox.PublishAsync(newAuction.Adapt<AuctionCreated>());
         await outbox.SaveChangesAndFlushMessagesAsync();
-
+        
         return CreatedAtAction(nameof(GetAuction), new { id = auction.Id }, newAuction);
     }
 
@@ -80,7 +80,7 @@ public class AuctionsController(AuctionDbContext context, IDbContextOutbox<Aucti
         var auction = await context.Auctions
             .Include(x => x.Item)
             .FirstOrDefaultAsync(x => x.Id == id);
-
+        
         if (updateAuctionDto.Make == "foo") throw new Exception("bar");
 
         if (auction == null)
@@ -94,14 +94,14 @@ public class AuctionsController(AuctionDbContext context, IDbContextOutbox<Aucti
         }
 
         if (auction.Seller != User.Identity?.Name) return Forbid();
-
+        
         auction.UpdatedAt = DateTime.UtcNow;
-
+        
         var updatedAuction = updateAuctionDto.Adapt(auction.Item);
 
         await outbox.PublishAsync(updatedAuction.Adapt<AuctionUpdated>());
         await outbox.SaveChangesAndFlushMessagesAsync();
-
+        
         return NoContent();
     }
 
@@ -120,14 +120,14 @@ public class AuctionsController(AuctionDbContext context, IDbContextOutbox<Aucti
         {
             return BadRequest("Cannot delete auction that has bids");
         }
-
+        
         if (auction.Seller != User.Identity?.Name) return Forbid();
-
+        
         context.Auctions.Remove(auction);
-
+        
         await outbox.PublishAsync(auction.Adapt<AuctionDeleted>());
         await outbox.SaveChangesAndFlushMessagesAsync();
-
+        
         return NoContent();
     }
 

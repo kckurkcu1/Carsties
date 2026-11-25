@@ -16,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers();
+
 var connString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connString)) throw new Exception("Connection string is empty");
 
@@ -40,7 +41,7 @@ builder.Host.UseWolverine(opts =>
     opts.PersistMessagesWithPostgresql(connString, "auctions_rmq");
     opts.UseEntityFrameworkCoreTransactions();
     opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
-
+    
     opts.UseRabbitMq(rabbit =>
         {
             rabbit.HostName = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
@@ -55,11 +56,11 @@ builder.Host.UseWolverine(opts =>
         .BindExchange("auction-finished").ToQueue("auction-auction-finished")
         .BindExchange("bid-placed").ToQueue("auction-bid-placed")
         .AutoProvision();
-
+    
     opts.PublishMessage<AuctionCreated>().ToRabbitExchange("auction-created");
     opts.PublishMessage<AuctionUpdated>().ToRabbitExchange("auction-updated");
     opts.PublishMessage<AuctionDeleted>().ToRabbitExchange("auction-deleted");
-
+    
     opts.ListenToRabbitQueue("wolverine-dead-letter-queue");
     opts.ListenToRabbitQueue("auction-auction-finished");
     opts.ListenToRabbitQueue("auction-bid-placed");
